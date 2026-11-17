@@ -11,7 +11,6 @@ speaks the answer to you.
 - **Follow the steps.** For a task with many clicks, screen-ink shows one step at a time. It can also do the clicks
   for you.
 - **See how things work.** Ask "How does a bicycle gear work?" screen-ink builds a 3D model that moves.
-- **Build LEGO sets.** Ask "Help me build LEGO 60285." screen-ink shows each step and reads it to you.
 - **Connect an agent.** Claude Code, Codex and other MCP agents can see your screen and draw on it.
 
 ## Requirements

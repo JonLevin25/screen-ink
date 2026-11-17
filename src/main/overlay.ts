@@ -3,7 +3,6 @@ import { app, BrowserWindow, clipboard, ipcMain, screen, shell, type Display } f
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { BUILD_MOVES, type BuildMove, type BuildPanel, type BuildParts } from '../shared/build'
 import { speaksCaption, words } from '../shared/caption'
 import type { DrawPayload } from '../shared/marks'
 import * as handoff from './handoff'
@@ -145,40 +144,6 @@ export async function draw(display: Display, payload: DrawPayload): Promise<void
   const inside = m.x >= b.x && m.x < b.x + b.width && m.y >= b.y && m.y < b.y + b.height
   const mouse = !payload.append && inside ? ([m.x - b.x, m.y - b.y] as [number, number]) : undefined
   w.webContents.send('ink:draw', { sounds: soundsOn(), cursor: settings.get().cursor, mouse, ...payload })
-}
-
-// The build panel: the step of the instructions the user is building from (builds.ts). It stays through drawings
-// and clears, and its buttons move the build.
-let building: ((move: BuildMove) => void) | null = null
-/** Who takes the build panel's buttons. */
-export const onBuild = (fn: (move: BuildMove) => void) => void (building = fn)
-ipcMain.on('ink:build-go', (e, move: unknown) => {
-  if (e.sender === page() && BUILD_MOVES.includes(move as BuildMove)) building?.(move as BuildMove)
-})
-let partsOf: ((key: string) => BuildParts | null) | null = null
-/** Who hands the page a 3D model's parts. */
-export const onBuildParts = (fn: (key: string) => BuildParts | null) => void (partsOf = fn)
-ipcMain.handle('ink:build-parts', (e, key: unknown) => (e.sender === page() && typeof key === 'string' ? (partsOf?.(key) ?? null) : null))
-// A step's words go without a caption: the panel shows them.
-ipcMain.handle('ink:build-say', (e, text: unknown) => {
-  if (e.sender === page() && typeof text === 'string') return voice.speak(text)
-})
-
-/** Shows `panel` over `display`, or puts the panel away (null). */
-export async function showBuild(display: Display, panel: BuildPanel | null): Promise<void> {
-  if (!panel) {
-    if (win && !win.isDestroyed()) win.webContents.send('ink:build', null)
-    return
-  }
-  const w = overlayWindow()
-  await loaded
-  moveTo(w, display)
-  w.webContents.send('ink:build', { ink: settings.get().ink, ...panel })
-}
-
-/** Reads a step out again. */
-export function sayBuild(text: string | undefined): void {
-  if (text) void voice.speak(text)
 }
 
 // screen-ink's pointer moving to a spot, or pressing there, and the page saying it has.

@@ -4,13 +4,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { screen } from 'electron'
 import { z } from 'zod'
-import { BUILD_MOVES } from '../shared/build'
 import { checkMarks } from '../shared/check'
 import { drawShape, type Box } from '../shared/marks'
 import * as canvas from './canvas'
 import { capture, displayUnderCursor, screenAccess } from './capture'
 import { scrollSchema } from './answer'
-import * as builds from './builds'
 import { INSTRUCTIONS, NARRATE } from './config'
 import * as lessons from './lessons'
 import * as overlay from './overlay'
@@ -177,43 +175,6 @@ function buildServer(): McpServer {
       inputSchema: { id: z.string().max(40).describe('From lessons.') },
     },
     async ({ id }) => ((await canvas.showLesson(id)) ? text('Showing it.') : text(`There is no lesson ${id}.`, true)),
-  )
-
-  server.registerTool(
-    'build',
-    {
-      title: 'Build along with instructions',
-      description:
-        "Shows a LEGO set's building instructions (fetched from LEGO), or an instructions PDF on this Mac, a step at a time in a " +
-        'panel on the side of the screen that reads each step out; the user moves on with its Next button or by saying "next" in ' +
-        'the bar. Where LDraw\'s library has a 3D model of the set, each step shows in 3D too (the model so far, the new parts ' +
-        'dropping in); give model for a set it has none of. Instructions opened before go back to where the user got to. ' +
-        'With go or step alone, moves the ones open. Returns what is showing. It needs no screenshot.',
-      inputSchema: {
-        set: z.string().regex(/^\d{3,7}(-\d{1,2})?$/).optional().describe('A LEGO set number, like 60285.'),
-        file: z.string().max(1000).optional().describe('Or an instructions PDF in the home folder.'),
-        step: z.number().int().min(0).max(9999).optional().describe('The step to show. Default: where the user got to.'),
-        go: z
-          .enum(BUILD_MOVES)
-          .optional()
-          .describe('Moves the instructions open: the next or previous step, this one read again, the panel put away, or the step shown in 3D or as the page.'),
-        model: z.string().max(1000).optional().describe('An LDraw model of the set (.ldr or .mpd) in the home folder, to show the steps of the instructions open in 3D.'),
-      },
-    },
-    async ({ set, file, step, go, model }) => {
-      try {
-        if (set || file) {
-          const shown = await builds.open({ set, file }, step)
-          return text(model ? await builds.useModel(model) : shown)
-        }
-        if (model) return text(await builds.useModel(model))
-        if (step === undefined && !go) return text(builds.where())
-        const moved = await builds.go(step ?? go!)
-        return moved ? text(moved) : text(builds.active() ? `There is no step ${step}.` : 'No instructions are open: give a set or file.', true)
-      } catch (e) {
-        return text(`Couldn't ${model && !set && !file ? 'use that model' : 'open the instructions'}: ${(e as Error).message}`, true)
-      }
-    },
   )
 
   server.registerTool(

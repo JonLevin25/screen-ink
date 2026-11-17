@@ -16,7 +16,7 @@ reply within a week; once it's fixed you'll be credited in the release notes unl
 - The MCP server on `127.0.0.1`: its bearer token, `Origin` and `Host` checks, and anything that lets a web page
   or another user on the machine reach it.
 - Screenshots, the saved API key, memories and lessons leaving the machine or being readable by other apps.
-- Marks, answers or fetched content (photos, LEGO instructions, LDraw parts) that run code or act on screen
+- Marks, answers or fetched content (photos) that run code or act on screen
   without the user asking.
 
 Only the latest release is supported.
