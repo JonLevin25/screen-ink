@@ -93,6 +93,13 @@ ipcMain.on('ink:lines', (e, lines: unknown, current: unknown) => {
   )
 })
 
+// The close button beside the scrub bar, and its subtitles switch, which is saved like the menu's.
+let closing: () => void = () => clear()
+/** Who takes the close button: by default it only clears the drawing. */
+export const onClose = (fn: () => void) => void (closing = fn)
+ipcMain.on('ink:close', e => e.sender === page() && closing())
+ipcMain.on('ink:captions', (e, on: unknown) => e.sender === page() && typeof on === 'boolean' && setCaptions(on))
+
 /**
  * Plays the drawing on screen, or the last one if it has gone, again from spoken line `line`. Safe while an answer is
  * still coming in: the line being said stops, the drawing so far plays from `line`, and later parts of the answer
@@ -178,7 +185,7 @@ export async function draw(display: Display, payload: DrawPayload): Promise<void
   const m = screen.getCursorScreenPoint()
   const inside = m.x >= b.x && m.x < b.x + b.width && m.y >= b.y && m.y < b.y + b.height
   const mouse = !payload.append && inside ? ([m.x - b.x, m.y - b.y] as [number, number]) : undefined
-  w.webContents.send('ink:draw', { sounds: soundsOn(), cursor: settings.get().cursor, mouse, ...payload })
+  w.webContents.send('ink:draw', { sounds: soundsOn(), captions: captionsOn(), cursor: settings.get().cursor, mouse, ...payload })
 }
 
 // screen-ink's pointer moving to a spot, or pressing there, and the page saying it has.

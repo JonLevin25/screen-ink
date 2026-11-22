@@ -1,7 +1,7 @@
 // The only bridge into the overlay page: drawings in, words out to be spoken and when they are, stopping and
 // rendering them ahead when the user goes back over a drawing, its lines and which is being said, a request to play
-// it again, whether the mouse is over a card, questions about a figure's parts, figures saved as 3D models, the
-// buttons the user clicks, where screen-ink's own pointer goes and presses.
+// it again, closing it, subtitles on or off, whether the mouse is over a card, questions about a figure's parts,
+// figures saved as 3D models, the buttons the user clicks, where screen-ink's own pointer goes and presses.
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DrawPayload } from '../shared/marks'
 
@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('inkBridge', {
   hush: () => ipcRenderer.send('ink:hush'),
   prepare: (lines: string[]) => ipcRenderer.send('ink:prepare', lines),
   lines: (lines: string[], current: number) => ipcRenderer.send('ink:lines', lines, current),
+  close: () => ipcRenderer.send('ink:close'),
+  setCaptions: (on: boolean) => ipcRenderer.send('ink:captions', on),
   onReplay: (cb: (line: number) => void) => ipcRenderer.on('ink:replay', (_e, line: number) => cb(line)),
   onSaying: (cb: (s: { text: string; seconds: number }) => void) => ipcRenderer.on('ink:saying', (_e, s: { text: string; seconds: number }) => cb(s)),
 })

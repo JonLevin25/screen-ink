@@ -288,7 +288,7 @@
       }
       #subtitle {
         max-width: 100%;
-        padding: 7px 14px;
+        padding: 10px 18px;
         border-radius: 10px;
         background: rgba(21, 23, 28, 0.72);
         color: #fff;
@@ -299,6 +299,8 @@
       }
       #subtitle.show {
         opacity: 1;
+        pointer-events: auto; /* it can be dragged anywhere on screen (scrub.ts) */
+        cursor: grab;
       }
       #subtitle span {
         opacity: 0.42;
@@ -382,34 +384,49 @@
         transform: none;
       }
 
-      /* The scrub bar (scrub.ts): back a line, pause, on a line, and a track with a segment per spoken line */
+      /* The scrub bar (scrub.ts): back a line, pause, on a line, a track with a segment per spoken line, the
+         subtitles switch, and apart from them a close button. Its empty edges are a handle for moving it. */
       #scrub {
         position: relative;
         display: none;
         align-items: center;
-        gap: 2px;
-        width: 340px;
+        gap: 8px;
         max-width: 100%;
-        padding: 4px 10px 4px 4px;
-        border-radius: 999px;
-        background: rgba(21, 23, 28, 0.78);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
         pointer-events: auto;
         opacity: 0.45;
         transition: opacity 0.2s;
+        cursor: grab;
       }
       #scrub.show {
         display: flex;
       }
       #scrub:hover,
       #scrub.dragging,
+      #scrub.moving,
       #scrub[data-state='paused'] {
         opacity: 1;
+      }
+      #scrub.moving,
+      #subtitle.moving {
+        cursor: grabbing;
+      }
+      .scrub-pill {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        width: 380px;
+        max-width: calc(100vw - 80px);
+        box-sizing: border-box;
+        padding: 7px 9px 7px 7px;
+        border-radius: 999px;
+        background: rgba(21, 23, 28, 0.78);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
       }
       #scrub button {
         flex: none;
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 6px;
         height: 26px;
         min-width: 26px;
@@ -423,6 +440,22 @@
       }
       #scrub button:hover {
         background: rgba(255, 255, 255, 0.14);
+      }
+      #scrub .scrub-subtitles {
+        margin-left: 6px;
+        opacity: 0.5;
+      }
+      #scrub .scrub-subtitles.on {
+        opacity: 1;
+      }
+      #scrub .scrub-close {
+        width: 34px;
+        height: 34px;
+        background: rgba(21, 23, 28, 0.78);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+      }
+      #scrub .scrub-close:hover {
+        background: rgba(60, 63, 70, 0.92);
       }
       #scrub svg {
         width: 15px;
@@ -492,11 +525,12 @@
       }
       /* Once the drawing has gone, only Replay stays */
       #scrub.gone {
-        width: auto;
-        padding-right: 4px;
         opacity: 0.8;
       }
-      #scrub.gone > :not(.scrub-play) {
+      #scrub.gone .scrub-pill {
+        width: auto;
+      }
+      #scrub.gone .scrub-pill > :not(.scrub-play) {
         display: none;
       }
 
@@ -622,7 +656,7 @@
       <g id="over"></g>
     </svg>
     <div id="bottom">
-      <div id="subtitle"></div>
+      <div id="subtitle" class="interactive"></div>
       <div id="caption"></div>
       <div id="scrub" class="interactive"></div>
     </div>

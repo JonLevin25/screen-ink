@@ -91,6 +91,7 @@ app.whenReady().then(() => {
     ask.stop()
     overlay.clear()
   }
+  overlay.onClose(clearInk) // the close button beside the scrub bar
   // The ask shortcut, moved when the setting changes; the old one stays if the new one can't be had.
   let asking = ''
   const registerAsk = (accelerator: string): boolean => {

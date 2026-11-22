@@ -1,12 +1,19 @@
 // The scrub bar under an explanation: go back a line, pause, go on a line, or click or drag along the track (one
 // segment per spoken line) to hear part of it again. Dragging shows the drawing as it stood at each line, silently,
-// and lets go into playing from there. Once the drawing has faded, the bar shrinks to a Replay button for a while.
+// and lets go into playing from there. Beside the track a button turns subtitles on and off, and a close button
+// apart from the bar takes the whole drawing away. Once the drawing has faded, the bar shrinks to a Replay button for
+// a while. The bar and the subtitles can be dragged by their empty edges, and go back to their places once the bar
+// has gone.
 
 export interface ScrubHooks {
   /** Rebuilds the drawing as it stands at `line`, then plays it from there unless `play` is false. */
   seek(line: number, play: boolean): void
   /** Pauses, or plays on from the line it paused in. */
   toggle(): void
+  /** Takes the whole drawing away. */
+  close(): void
+  /** Turns subtitles on or off, for good. */
+  subtitles(on: boolean): void
 }
 
 const REPLAY_FOR_MS = 20_000 // how long the Replay button stays once the drawing has gone
@@ -18,17 +25,25 @@ const ICONS = {
   play: '<svg viewBox="0 0 16 16"><path d="M4.5 2.5v11L13.5 8z"/></svg>',
   pause: '<svg viewBox="0 0 16 16"><path d="M4.5 3v10M11.5 3v10"/></svg>',
   again: '<svg viewBox="0 0 16 16"><path d="M3.2 8.5a5 5 0 1 0 1.6-4.1M4.5 1.8v3h3" fill="none"/></svg>',
+  subtitles:
+    '<svg viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="10" rx="2" fill="none"/><path d="M4.5 9.5h3M9.5 9.5h2M4.5 7h7" fill="none"/></svg>',
+  close: '<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
 }
 
 const bar = document.getElementById('scrub') as HTMLDivElement
+const pill = document.createElement('div')
+pill.className = 'scrub-pill'
 const prev = button('prev', 'Previous line')
 const play = button('play', 'Pause')
 const next = button('next', 'Next line')
 const track = document.createElement('div')
 track.className = 'scrub-track'
+const subs = button('subtitles', 'Subtitles')
+const close = button('close', 'Close the drawing')
 const tip = document.createElement('div')
 tip.className = 'scrub-tip'
-bar.append(prev, play, next, track, tip)
+pill.append(prev, play, next, track, subs)
+bar.append(pill, close, tip)
 
 let hooks: ScrubHooks | null = null
 let lines: string[] = []
@@ -36,6 +51,7 @@ let current = -1
 let segments: HTMLElement[] = []
 let dragging = -1
 let hovered = false
+let moving = false
 let goneTimer = 0
 
 function button(act: keyof typeof ICONS, title: string): HTMLButtonElement {
@@ -50,8 +66,61 @@ export function init(h: ScrubHooks): void {
   hooks = h
 }
 
-/** Whether the mouse is on the bar or dragging it, so the window keeps taking clicks. */
-export const holding = () => hovered || dragging >= 0
+/** Whether the mouse is on the bar or dragging something, so the window keeps taking clicks. */
+export const holding = () => hovered || dragging >= 0 || moving
+
+// ---- moving things around the screen by their empty edges
+
+const movables: HTMLElement[] = []
+
+/** Lets `el` be dragged around the screen wherever `handle` says a press is on its empty space. */
+export function movable(el: HTMLElement, handle: (target: EventTarget | null) => boolean): void {
+  movables.push(el)
+  el.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !handle(e.target)) return
+    e.preventDefault()
+    el.setPointerCapture(e.pointerId)
+    const [tx = 0, ty = 0] = el.style.translate.split(' ').map(parseFloat).filter(n => !isNaN(n))
+    // Where it sits unmoved, so it can be kept wholly on screen.
+    const r = el.getBoundingClientRect()
+    const left = r.left - tx
+    const top = r.top - ty
+    moving = true
+    el.classList.add('moving')
+    const move = (m: PointerEvent) => {
+      const dx = Math.min(Math.max(tx + m.clientX - e.clientX, -left), innerWidth - left - r.width)
+      const dy = Math.min(Math.max(ty + m.clientY - e.clientY, -top), innerHeight - top - r.height)
+      el.style.translate = `${dx}px ${dy}px`
+    }
+    const up = () => {
+      moving = false
+      el.classList.remove('moving')
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      el.removeEventListener('pointercancel', up)
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+    el.addEventListener('pointercancel', up)
+  })
+}
+
+/** Everything moved goes back to its place. */
+function putBack(): void {
+  for (const el of movables) el.style.translate = ''
+}
+
+// The bar moves by its pill's padding and the gaps between its buttons.
+movable(bar, t => t === bar || t === pill)
+
+// ---- what the bar shows
+
+function hide(): void {
+  clearTimeout(goneTimer)
+  bar.classList.remove('show', 'gone')
+  tip.classList.remove('show')
+  putBack()
+}
 
 /** The lines of the drawing on screen. A drawing with nothing said hides the bar. */
 export function setLines(texts: string[]): void {
@@ -69,7 +138,8 @@ export function setLines(texts: string[]): void {
     })
     track.replaceChildren(...segments)
   }
-  bar.classList.toggle('show', texts.some(Boolean))
+  if (texts.some(Boolean)) bar.classList.add('show')
+  else hide()
   mark()
 }
 
@@ -98,17 +168,20 @@ export function setState(state: 'playing' | 'paused' | 'done'): void {
   if (state === 'done') segments.forEach(s => s.classList.add('past'))
 }
 
-/** The drawing has gone: keep a Replay button up for a while. */
+/** Whether subtitles are on, as the settings say. */
+export function setSubtitles(on: boolean): void {
+  subs.classList.toggle('on', on)
+  subs.title = on ? 'Turn subtitles off' : 'Turn subtitles on'
+}
+
+/** The drawing has gone: keep a Replay button up for a while, or take the bar away too. */
 export function gone(canReplay: boolean): void {
   clearTimeout(goneTimer)
-  if (!canReplay || !bar.classList.contains('show')) return bar.classList.remove('show')
+  if (!canReplay || !bar.classList.contains('show')) return hide()
   bar.classList.add('gone')
   play.innerHTML = `${ICONS.again}<span>Replay</span>`
   play.title = 'Play it again'
-  goneTimer = window.setTimeout(() => {
-    if (hovered) return
-    bar.classList.remove('show', 'gone')
-  }, REPLAY_FOR_MS)
+  goneTimer = window.setTimeout(() => !hovered && hide(), REPLAY_FOR_MS)
 }
 
 function mark(): void {
@@ -149,6 +222,15 @@ next.addEventListener('click', () => current < lines.length - 1 && hooks?.seek(c
 play.addEventListener('click', () => {
   if (bar.classList.contains('gone') || bar.dataset.state === 'done') hooks?.seek(0, true)
   else hooks?.toggle()
+})
+subs.addEventListener('click', () => {
+  const on = !subs.classList.contains('on')
+  setSubtitles(on)
+  hooks?.subtitles(on)
+})
+close.addEventListener('click', () => {
+  hide()
+  hooks?.close()
 })
 
 track.addEventListener('pointerdown', e => {

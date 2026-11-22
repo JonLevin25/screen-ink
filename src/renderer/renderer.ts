@@ -29,6 +29,8 @@ declare global {
       prepare(lines: string[]): void
       lines(lines: string[], current: number): void
       onReplay(cb: (line: number) => void): void
+      close(): void
+      setCaptions(on: boolean): void
       pointer(over: boolean): void
       ask(question: string): void
       save(name: string, usdz: Uint8Array): Promise<string | null>
@@ -90,8 +92,11 @@ let saying = ''
 let wordTimers: number[] = []
 let hideTimer = 0
 
+let subtitlesOn = true
+
 function showSaying(text: string, seconds: number): void {
   scrub.saying(text, seconds)
+  if (!subtitlesOn) return
   if (caption.classList.contains('show') && caption.textContent === text) return // the caption is what's being read
   wordTimers.forEach(clearTimeout)
   clearTimeout(hideTimer)
@@ -153,6 +158,7 @@ function narrate(text: string, from: number, to: number): void {
           if (waiting !== w) return
           clock()
           waiting = null
+          if (!playing.length && !paused) scrub.setState('done') // the last words were the end of it
         }))
       },
     },
@@ -172,7 +178,7 @@ function tick(): void {
   }
   playing = playing.filter(b => !b.started || t < b.at + b.dur)
   raf = playing.length ? requestAnimationFrame(tick) : 0
-  if (!raf && !paused) scrub.setState('done')
+  if (!raf && !paused && !waiting) scrub.setState('done')
 }
 
 // ---- beats
@@ -357,7 +363,7 @@ function clearInk(instant: boolean): void {
   pointer.hide(instant)
   const gone = () => {
     wipe()
-    scrub.gone(lastLines.some(l => l.text))
+    scrub.gone(!closed && lastLines.some(l => l.text))
   }
   if (instant) return gone()
   fade(true)
@@ -431,6 +437,8 @@ function drop(mark: { g: Element; host: HTMLElement }): void {
 function draw(p: DrawPayload, quiet = 0): number {
   generation++
   if (!p.append) wipe()
+  closed = false
+  if (p.captions !== undefined) scrub.setSubtitles((subtitlesOn = p.captions))
   const pi = shown.length
   lastFade = p.fadeAfter ?? 0
   keep([...shown, { ...p, mouse: undefined, fadeAfter: undefined }])
@@ -587,7 +595,26 @@ function toggle(): void {
   scrub.setState('paused')
 }
 
-scrub.init({ seek, toggle })
+let closed = false // the user closed the drawing: no Replay button after it
+
+scrub.init({
+  seek,
+  toggle,
+  close: () => {
+    closed = true
+    // The main process stops the answer too and clears the drawing as the clear shortcut does.
+    if (window.inkBridge) window.inkBridge.close()
+    else clearInk(false)
+  },
+  subtitles: on => {
+    subtitlesOn = on
+    if (!on) stopSaying()
+    window.inkBridge?.setCaptions(on)
+  },
+})
+// The subtitles can be moved anywhere by dragging them.
+scrub.movable(subtitle, () => true)
+scrub.setSubtitles(subtitlesOn)
 
 // ---- staying through a reload
 
