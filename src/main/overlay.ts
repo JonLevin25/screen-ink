@@ -79,15 +79,25 @@ ipcMain.on('ink:prepare', (e, lines: unknown) => {
   if (texts.length) void voice.prepare(texts)
 })
 let lineListeners: ((lines: string[], current: number) => void)[] = []
-/** Calls `fn` with the spoken lines of the drawing on screen as each starts, and which one it is. */
+/**
+ * Calls `fn` with the spoken lines of the drawing on screen as each starts, and which one it is. When a new drawing
+ * replaces it or it is cleared, `fn` gets no lines and -1: the next lines belong to a new answer.
+ */
 export const onLines = (fn: (lines: string[], current: number) => void) => void lineListeners.push(fn)
+const tellLines = (lines: string[], current: number) => lineListeners.forEach(fn => fn(lines, current))
 ipcMain.on('ink:lines', (e, lines: unknown, current: unknown) => {
   if (e.sender !== page() || !Array.isArray(lines) || typeof current !== 'number') return
-  const texts = lines.map(l => (typeof l === 'string' ? l : ''))
-  for (const fn of lineListeners) fn(texts, current)
+  tellLines(
+    lines.map(l => (typeof l === 'string' ? l : '')),
+    current,
+  )
 })
 
-/** Plays the drawing on screen, or the last one if it has gone, again from spoken line `line`. */
+/**
+ * Plays the drawing on screen, or the last one if it has gone, again from spoken line `line`. Safe while an answer is
+ * still coming in: the line being said stops, the drawing so far plays from `line`, and later parts of the answer
+ * follow it as they arrive.
+ */
 export function replay(line = 0): void {
   if (!win || win.isDestroyed()) return
   win.showInactive()
@@ -156,6 +166,7 @@ export async function draw(display: Display, payload: DrawPayload): Promise<void
   if (!payload.append) {
     voice.stop()
     voice.forget()
+    tellLines([], -1)
   }
   // Render the words ahead, and start once the first are ready.
   const lines = [...payload.marks.flatMap(words), ...(speaksCaption(payload) ? [payload.caption!] : [])]
@@ -202,6 +213,7 @@ export function point(at: [number, number], show: { press?: boolean; label?: str
 export function clear(instant = false): void {
   voice.stop()
   voice.forget()
+  tellLines([], -1)
   if (win && !win.isDestroyed()) win.webContents.send('ink:clear', { instant })
 }
 
