@@ -164,8 +164,24 @@ export function stop(): void {
   latest?.abort()
 }
 
-/** Asks Claude and draws the answer as it is written, then walks through the steps that follow it, if any. */
+let answers = 0 // answers being written, drawn or walked through
+
+/** What the shortcut is in the middle of, if anything: a reload in development waits for it (dev.ts). */
+export function busy(): string[] {
+  return [...(answers ? ['an answer or walkthrough is going'] : []), ...(win?.isVisible() ? ['the ask bar is open'] : [])]
+}
+
 async function answer(question: string, shot: Capture, keep: boolean): Promise<void> {
+  answers++
+  try {
+    await answerAndWalk(question, shot, keep)
+  } finally {
+    answers--
+  }
+}
+
+/** Asks Claude and draws the answer as it is written, then walks through the steps that follow it, if any. */
+async function answerAndWalk(question: string, shot: Capture, keep: boolean): Promise<void> {
   const abort = (running = latest = new AbortController())
   let step = await reply(question, shot, keep, abort)
   running = null

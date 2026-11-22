@@ -125,6 +125,7 @@ function stopSaying(): void {
 
 /** Speaks `text` at `from` and holds the clock at `to` until it has been said. */
 function narrate(text: string, from: number, to: number): void {
+  if (restoring) return
   let said: Promise<unknown> = Promise.resolve()
   const quiet = () => {}
   playing.push(
@@ -332,6 +333,7 @@ function wipe(): void {
   caption.classList.remove('show')
   stopSaying()
   fade(false)
+  keep([])
 }
 
 function clearInk(instant: boolean): void {
@@ -377,6 +379,7 @@ function ask(question: string): void {
 
 function fadeLater(seconds: number): void {
   clearTimeout(fadeTimer)
+  keep(shown, Date.now() + seconds * 1000)
   fadeTimer = window.setTimeout(() => clearInk(false), seconds * 1000)
 }
 
@@ -404,6 +407,7 @@ function drop(mark: { g: Element; host: HTMLElement }): void {
 function draw(p: DrawPayload): void {
   generation++
   if (!p.append) wipe()
+  keep([...shown, { ...p, mouse: undefined, fadeAfter: undefined }])
   pointer.enter(p.ink, p.cursor !== false, !p.append, p.mouse)
   setSounds(p.sounds ?? false)
   for (const id of p.remove ?? []) {
@@ -470,7 +474,47 @@ function draw(p: DrawPayload): void {
   if (!raf) raf = requestAnimationFrame(tick)
 }
 
+// ---- staying through a reload
+
+// What is on screen is kept in the page's session storage, which a reload keeps, and drawn again when the page loads:
+// at once, silent, and fading when it would have. A restart of the app in development passes it on (overlay.ts).
+const SHOWN = 'ink:shown'
+let shown: DrawPayload[] = []
+let fadeAt = 0
+let restoring = false
+
+function keep(payloads: DrawPayload[], fadesAt = 0): void {
+  shown = payloads
+  fadeAt = fadesAt
+  try {
+    if (shown.length) sessionStorage.setItem(SHOWN, JSON.stringify({ payloads: shown, fadeAt }))
+    else sessionStorage.removeItem(SHOWN)
+  } catch {} // too big to keep: a reload clears it
+}
+
+function restore(): void {
+  let saved: { payloads: DrawPayload[]; fadeAt: number }
+  try {
+    saved = JSON.parse(sessionStorage.getItem(SHOWN) ?? 'null')
+    if (!saved?.payloads?.length) return
+  } catch {
+    return
+  }
+  restoring = true
+  try {
+    for (const p of saved.payloads) draw({ ...p, sounds: false, cursor: false })
+  } finally {
+    restoring = false
+  }
+  clockAt = endsAt + 1 // everything is due: the next frame finishes it
+  if (saved.fadeAt) fadeLater(Math.max(3, (saved.fadeAt - Date.now()) / 1000))
+}
+
+/** Whether a drawing is still going, for a reload in development to wait for. */
+Object.assign(window, { inkBusy: () => playing.length > 0 || waiting !== null })
+
 if (window.inkBridge) {
+  restore()
   window.inkBridge.onDraw(draw)
   window.inkBridge.onClear(o => clearInk(o.instant))
   window.inkBridge.onSaying(s => showSaying(s.text, s.seconds))

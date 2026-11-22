@@ -8,6 +8,7 @@ import * as ask from './ask'
 import * as canvas from './canvas'
 import { displayUnderCursor } from './capture'
 import { CLEAR_SHORTCUT, PORT } from './config'
+import * as dev from './dev'
 import * as handoff from './handoff'
 import * as lessons from './lessons'
 import { startMcp } from './mcp'
@@ -81,7 +82,7 @@ app.whenReady().then(() => {
   const read = process.platform === 'win32' ? `Get-Content '${file}'` : `cat '${file}'`
   const addCommand = `claude mcp add --transport http screen-ink ${url} --header "Authorization: Bearer $(${read})"`
 
-  startMcp({ port: PORT, token }).on('error', e => {
+  const mcp = startMcp({ port: PORT, token }).on('error', e => {
     console.error(`screen-ink: can't serve on ${url}: ${e.message}`)
     app.quit()
   })
@@ -147,6 +148,7 @@ app.whenReady().then(() => {
   }
 
   console.log(`screen-ink: MCP on ${url}, ask with ${asking}\nAdd it to Claude Code with:\n  ${addCommand}`)
+  void dev.start(mcp)
   if (process.env.SCREEN_INK_DEMO) void voice.load().then(() => drawDemo(process.env.SCREEN_INK_DEMO === '3d'))
 })
 

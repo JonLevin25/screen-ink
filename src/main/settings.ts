@@ -45,7 +45,7 @@ export interface Settings {
   cursor: boolean
 }
 
-const DEFAULTS: Settings = {
+export const DEFAULTS: Settings = {
   provider: 'claude-code',
   model: 'sonnet',
   effort: '',

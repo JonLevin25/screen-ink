@@ -14,6 +14,8 @@
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
+    "dev": "node scripts/dev.mjs",
+    "reload": "node scripts/dev.mjs reload",
     "preview": "npm run build && open dist/renderer/index.html",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",

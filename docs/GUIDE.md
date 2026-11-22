@@ -366,6 +366,15 @@ glass are lit by a soft studio room so they shine, and keep the ink.
   (2 for the pen demo, 3 for the 3D one, R to replay; `#3d` in the URL starts with 3D). The quickest way to
   work on the look; `drawPreview(marks, caption, { append, remove })` in its console draws any marks, and
   `pressPreview([x, y], label)` shows the pointer's press.
+- `npm run dev` runs the app with hot reload: each change is built and applied as you save, without losing what is
+  on screen. A change to a page reloads only its window, and the page draws again what it showed, at once and
+  silently. A change to the main process restarts the app, which carries over the drawing and the last screenshot.
+  Claude Code sessions connected over MCP keep working through either, since the server is stateless and keeps its
+  port and token. A change waits while screen-ink is answering, drawing, speaking, serving a tool call or has the
+  ask bar open. A change that would break connected sessions or saved settings is held back: an MCP tool removed, a
+  parameter removed, renamed, retyped or newly required, the port moved, or a setting's type changed.
+  `npm run reload` builds and applies the changes now and says what it did (exit code 2 when held, 3 when busy);
+  `npm run reload -- --force` applies them anyway. `npm run dev -- --no-watch` waits for `npm run reload`.
 - `npm run typecheck`, `npm run build`.
 - Environment ([src/main/settings.ts](../src/main/settings.ts), [src/main/config.ts](../src/main/config.ts)), each
   winning over Settings for that run: `SCREEN_INK_PROVIDER` (`claude-code`, `api-key` or `codex`),
@@ -396,6 +405,9 @@ glass are lit by a soft studio room so they shine, and keep the ink.
 | [src/main/settings.ts](../src/main/settings.ts) | Saved settings, the environment's overrides, the encrypted API key |
 | [src/main/settings-window.ts](../src/main/settings-window.ts), [src/renderer/settings.ts](../src/renderer/settings.ts) | Settings and first-run setup |
 | [src/main/update.ts](../src/main/update.ts) | Checks GitHub releases (or an update feed) for a newer version |
+| [scripts/dev.mjs](../scripts/dev.mjs) | `npm run dev` and `npm run reload`: builds on each change, decides what to reload, and holds back breaking changes |
+| [src/main/dev.ts](../src/main/dev.ts) | The app's side of hot reload: what it is busy with, reloading windows, carrying state over a restart |
+| [src/main/contract.ts](../src/main/contract.ts), [scripts/stub.cjs](../scripts/stub.cjs) | Reads a build's MCP tools, port and settings shape outside Electron, to compare builds |
 | [plugin/](../plugin) | The Claude Code plugin: the MCP server, its token helper, and the `show` skill |
 | [src/main/stream.ts](../src/main/stream.ts) | Picks each finished mark out of the answer's JSON as it is written |
 | [src/main/canvas.ts](../src/main/canvas.ts) | The last screenshot's coordinate space, shared by MCP and the shortcut |

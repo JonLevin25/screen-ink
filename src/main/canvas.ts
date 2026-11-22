@@ -15,6 +15,15 @@ export function remember(shot: Capture): void {
   last = { displayId: shot.display.id, width: shot.width, height: shot.height, elements: shot.elements }
 }
 
+/** The last screenshot's canvas, kept across a restart in development (dev.ts) so agents can go on drawing on it. */
+export async function saved(): Promise<{ displayId: number; width: number; height: number; elements: Element[] } | null> {
+  return last && { ...last, elements: await last.elements }
+}
+
+export function restore(s: { displayId: number; width: number; height: number; elements: Element[] }): void {
+  last = { ...s, elements: Promise.resolve(s.elements) }
+}
+
 /** The last screenshot's display, and its size in units, or why there is none. */
 function lastDisplay(): { d: Display; width: number; height: number; ppu: number } {
   if (!last) throw new Error('Call screenshot first: it fixes the coordinates.')

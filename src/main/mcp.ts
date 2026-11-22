@@ -24,7 +24,8 @@ const text = (t: string, isError = false) => ({ content: [{ type: 'text' as cons
 const PROGRESS = 'While you work on a task the user is waiting on, keep them posted with progress: it needs no screenshot.'
 const PROGRESS_FADE = 20 // seconds the checklist stays once every step is done or failed
 
-function buildServer(): McpServer {
+/** The server with every tool. A fresh one answers each request. */
+export function buildServer(): McpServer {
   const server = new McpServer({ name: 'screen-ink', version: '0.1.0' }, { instructions: `${INSTRUCTIONS} ${NARRATE} ${PROGRESS}` })
 
   server.registerTool(
@@ -210,6 +211,10 @@ function readBody(req: http.IncomingMessage, limit = 1 << 20): Promise<string> {
   })
 }
 
+let calls = 0
+/** How many requests are being answered now. */
+export const answering = () => calls
+
 export function startMcp(opts: InkOptions): http.Server {
   const allowedHosts = [`127.0.0.1:${opts.port}`, `localhost:${opts.port}`]
   const httpServer = http.createServer(async (req, res) => {
@@ -233,7 +238,9 @@ export function startMcp(opts: InkOptions): http.Server {
       enableDnsRebindingProtection: true,
       allowedHosts,
     })
+    calls++
     res.on('close', () => {
+      calls--
       void transport.close()
       void server.close()
     })

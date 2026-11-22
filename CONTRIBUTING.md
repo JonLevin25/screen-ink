@@ -15,6 +15,7 @@ npm ci
 npm start
 ```
 
+`npm run dev` runs the app with hot reload: changes are applied as you save, without losing what is on screen.
 `npm run preview` opens the overlay in a browser with a demo drawing, which is the quickest way to work on how
 marks look. The guide's [Develop](docs/GUIDE.md#develop) section lists the environment variables and what each file does.
 

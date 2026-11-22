@@ -181,6 +181,37 @@ export function clear(instant = false): void {
   if (win && !win.isDestroyed()) win.webContents.send('ink:clear', { instant })
 }
 
+// What the overlay shows, as the page keeps it to draw again after a reload (renderer.ts), so development reloads
+// and restarts (dev.ts) leave the drawing in place.
+const SHOWN = 'ink:shown'
+
+/** The drawing on screen and its display, or null when there is none. */
+export async function shown(): Promise<{ displayId: number; drawing: string } | null> {
+  const d = showing()
+  if (!d || !win) return null
+  const drawing: unknown = await win.webContents.executeJavaScript(`sessionStorage.getItem(${JSON.stringify(SHOWN)})`).catch(() => null)
+  return typeof drawing === 'string' ? { displayId: d.id, drawing } : null
+}
+
+/** Draws again what `shown` gave, after a restart, without its words or animation. */
+export async function reshow(s: { displayId: number; drawing: string }): Promise<void> {
+  const display = screen.getAllDisplays().find(d => d.id === s.displayId)
+  if (!display) return
+  const w = overlayWindow()
+  await loaded
+  for (const p of JSON.parse(s.drawing).payloads as DrawPayload[]) lessons.track(display, p)
+  const reloaded = new Promise<void>(r => w.webContents.once('did-finish-load', () => r()))
+  await w.webContents.executeJavaScript(`sessionStorage.setItem(${JSON.stringify(SHOWN)}, ${JSON.stringify(s.drawing)}); location.reload()`)
+  await reloaded
+  moveTo(w, display)
+}
+
+/** Whether the page is still drawing. */
+export async function drawing(): Promise<boolean> {
+  if (!win || win.isDestroyed() || !win.isVisible()) return false
+  return win.webContents.executeJavaScript('window.inkBusy?.() ?? false').catch(() => false)
+}
+
 /** Runs `fn` with the overlay invisible, so a screenshot shows the screen and not our marks. */
 export async function hiddenWhile<T>(fn: () => Promise<T>): Promise<T> {
   if (!win || win.isDestroyed() || !win.isVisible()) return fn()
