@@ -382,6 +382,124 @@
         transform: none;
       }
 
+      /* The scrub bar (scrub.ts): back a line, pause, on a line, and a track with a segment per spoken line */
+      #scrub {
+        position: relative;
+        display: none;
+        align-items: center;
+        gap: 2px;
+        width: 340px;
+        max-width: 100%;
+        padding: 4px 10px 4px 4px;
+        border-radius: 999px;
+        background: rgba(21, 23, 28, 0.78);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+        pointer-events: auto;
+        opacity: 0.45;
+        transition: opacity 0.2s;
+      }
+      #scrub.show {
+        display: flex;
+      }
+      #scrub:hover,
+      #scrub.dragging,
+      #scrub[data-state='paused'] {
+        opacity: 1;
+      }
+      #scrub button {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        min-width: 26px;
+        padding: 0 5px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: #fff;
+        font: 600 12px -apple-system, 'SF Pro Text', system-ui, sans-serif;
+        cursor: pointer;
+      }
+      #scrub button:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+      #scrub svg {
+        width: 15px;
+        height: 15px;
+        fill: currentColor;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .scrub-track {
+        flex: 1;
+        display: flex;
+        gap: 3px;
+        height: 22px;
+        margin-left: 6px;
+        align-items: center;
+        cursor: pointer;
+        touch-action: none;
+      }
+      .scrub-track i {
+        position: relative;
+        flex-basis: 0;
+        height: 5px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.22);
+        overflow: hidden;
+        transition: height 0.12s;
+      }
+      .scrub-track:hover i {
+        height: 8px;
+      }
+      .scrub-track i.past {
+        background: rgba(255, 255, 255, 0.85);
+      }
+      .scrub-track i b {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0;
+        background: #fff;
+      }
+      .scrub-track i:not(.now) b {
+        animation: none !important;
+      }
+      @keyframes scrub-fill {
+        to {
+          width: 100%;
+        }
+      }
+      .scrub-tip {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        width: max-content;
+        max-width: 240px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        background: rgba(21, 23, 28, 0.92);
+        color: #fff;
+        font: 500 12.5px/1.35 -apple-system, 'SF Pro Text', system-ui, sans-serif;
+        transform: translateX(-50%);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.12s;
+      }
+      .scrub-tip.show {
+        opacity: 1;
+      }
+      /* Once the drawing has gone, only Replay stays */
+      #scrub.gone {
+        width: auto;
+        padding-right: 4px;
+        opacity: 0.8;
+      }
+      #scrub.gone > :not(.scrub-play) {
+        display: none;
+      }
+
       /* ---- browser preview only: a mock window laid out in the demo's 1280×800 units */
       #mock,
       .replay {
@@ -506,6 +624,7 @@
     <div id="bottom">
       <div id="subtitle"></div>
       <div id="caption"></div>
+      <div id="scrub" class="interactive"></div>
     </div>
     <button class="replay" id="replay">Pen demo (2)</button>
     <button class="replay" id="replay3d" style="left: 130px">3D demo (3)</button>

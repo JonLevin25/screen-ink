@@ -90,15 +90,14 @@ export async function speak(text: string, onStart?: (seconds: number) => void): 
   const mine = turn
   if (!on() || !text.trim()) return
   if (kokoro && !clips.has(text)) void prepare([text])
+  // The clip is kept until the drawing goes, so going back to its line plays it again without rendering it again.
   const clip = (await clips.get(text)) ?? null
-  clips.delete(text)
   if (mine !== turn) return
   onStart?.(clip?.seconds ?? text.split(/\s+/).length / SAY_WORDS_PER_SECOND)
   if (clip) {
     await (process.platform === 'win32'
       ? play('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object Media.SoundPlayer '${clip.file.replace(/'/g, "''")}').PlaySync()`])
       : play('afplay', [clip.file]))
-    fs.rm(clip.file, { force: true }, () => {})
   } else if (process.platform === 'darwin') {
     // The words go in on stdin, so nothing in them can read as a flag.
     await play('say', [...(MAC_VOICE ? ['-v', MAC_VOICE] : []), '-f', '-'], text)
@@ -133,5 +132,7 @@ export function stop(): void {
 /** Drops lines rendered for a drawing that is gone. */
 export function forget(): void {
   batch++
+  const old = clips
   clips = new Map()
+  for (const clip of old.values()) void clip.then(c => c && fs.rm(c.file, { force: true }, () => {}))
 }

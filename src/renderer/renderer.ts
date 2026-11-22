@@ -1,9 +1,11 @@
 // The overlay page: turns marks into animated, hand-drawn SVG. Every mark becomes beats (a pen stroke, a pill
 // popping in, a fade) and beats play one after another, so a drawing appears in the order the agent wrote it.
 // A mark's `say` is spoken as it starts, and the drawing waits at the mark's end until the words are out.
+// Each spoken mark starts a line, and the scrub bar (scrub.ts) goes back to any line: the drawing is built again
+// silently up to it, then plays and speaks from there.
 // Opened in a plain browser (no `window.inkBridge`) it draws the demo over a mock window instead.
 import { getStroke } from 'perfect-freehand'
-import { speaksCaption } from '../shared/caption'
+import { speaksCaption, words } from '../shared/caption'
 import { DEMO_CAPTION, DEMO_FIGURE_CAPTION, DEMO_FIGURE_MARKS, DEMO_MARKS, DEMO_SIZE } from '../shared/demo'
 import type { Box, DrawPayload, Mark, Point } from '../shared/marks'
 import { actionBeats, codeBeats, mathBeats, noteBeats, photoBeats, stepsBeats, type Act, type CardHooks, type Outcome, type Place } from './cards'
@@ -13,6 +15,7 @@ import { disposeFigures, figureBeats } from './figure'
 import { beside, fadeIn, HAND_FONT, pen, pill, pop } from './ink'
 import { arrow, connector, cross, dashes, marker, outlinePath, ring, strike, tick as tickMark, underline, type Rect } from './shapes'
 import * as pointer from './pointer'
+import * as scrub from './scrub'
 import { setSounds } from './sounds'
 
 declare global {
@@ -22,6 +25,10 @@ declare global {
       onClear(cb: (o: { instant: boolean }) => void): void
       speak(text: string): Promise<void>
       onSaying(cb: (s: { text: string; seconds: number }) => void): void
+      hush(): void
+      prepare(lines: string[]): void
+      lines(lines: string[], current: number): void
+      onReplay(cb: (line: number) => void): void
       pointer(over: boolean): void
       ask(question: string): void
       save(name: string, usdz: Uint8Array): Promise<string | null>
@@ -64,7 +71,7 @@ let waiting: Promise<void> | null = null
 
 function clock(): number {
   const t = now()
-  if (!waiting) clockAt += t - realAt
+  if (!waiting && !paused) clockAt += t - realAt
   realAt = t
   return clockAt
 }
@@ -84,6 +91,7 @@ let wordTimers: number[] = []
 let hideTimer = 0
 
 function showSaying(text: string, seconds: number): void {
+  scrub.saying(text, seconds)
   if (caption.classList.contains('show') && caption.textContent === text) return // the caption is what's being read
   wordTimers.forEach(clearTimeout)
   clearTimeout(hideTimer)
@@ -164,6 +172,7 @@ function tick(): void {
   }
   playing = playing.filter(b => !b.started || t < b.at + b.dur)
   raf = playing.length ? requestAnimationFrame(tick) : 0
+  if (!raf && !paused) scrub.setState('done')
 }
 
 // ---- beats
@@ -316,12 +325,19 @@ function fade(out: boolean): void {
 }
 
 function wipe(): void {
+  if (shown.length) {
+    lastShown = shown
+    lastLines = lines
+  }
+  lines = []
+  line = -1
+  paused = false
   playing = []
   endsAt = 0
   waiting = null
   clearTimeout(fadeTimer)
   fadeAfter = 0
-  if (overCard) {
+  if (overCard && !scrub.holding()) {
     overCard = false
     window.inkBridge?.pointer(false) // its card is gone: let clicks through again
   }
@@ -339,11 +355,15 @@ function wipe(): void {
 function clearInk(instant: boolean): void {
   const gen = ++generation
   pointer.hide(instant)
-  if (instant) return wipe()
+  const gone = () => {
+    wipe()
+    scrub.gone(lastLines.some(l => l.text))
+  }
+  if (instant) return gone()
   fade(true)
   caption.classList.remove('show')
   stopSaying()
-  setTimeout(() => gen === generation && wipe(), 320)
+  setTimeout(() => gen === generation && gone(), 320)
 }
 
 /** A part of a figure was clicked. The browser preview shows the question instead of asking it. */
@@ -404,9 +424,15 @@ function drop(mark: { g: Element; host: HTMLElement }): void {
   mark.host.remove()
 }
 
-function draw(p: DrawPayload): void {
+/**
+ * Draws `p`. The first `quiet` marks are drawn without words or the pointer (to go back to a line). Returns when
+ * mark `quiet` starts on the drawing clock.
+ */
+function draw(p: DrawPayload, quiet = 0): number {
   generation++
   if (!p.append) wipe()
+  const pi = shown.length
+  lastFade = p.fadeAfter ?? 0
   keep([...shown, { ...p, mouse: undefined, fadeAfter: undefined }])
   pointer.enter(p.ink, p.cursor !== false, !p.append, p.mouse)
   setSounds(p.sounds ?? false)
@@ -424,7 +450,11 @@ function draw(p: DrawPayload): void {
   const R = (b: Box): Rect => ({ x: b[0] * p.ppu, y: b[1] * p.ppu, w: b[2] * p.ppu, h: b[3] * p.ppu })
   const start = Math.max(clock(), endsAt) + 0.05
   let cursor = start
-  for (const m of p.marks) {
+  let resumeAt = start
+  const reads = speaksCaption(p)
+  if (reads) startLine(pi, 0, p.caption!, start, !quiet)
+  for (const [i, m] of p.marks.entries()) {
+    const loud = i >= quiet
     const color = (m.kind !== 'spotlight' && m.color) || p.ink
     const flat = ['highlight', 'spotlight', 'plot', 'timeline', 'flow'].includes(m.kind)
     const g = el('g', flat ? {} : { style: `filter: drop-shadow(0 0 5px ${color}99) drop-shadow(0 1px 1.5px rgba(0,0,0,.35))` }, m.kind === 'spotlight' ? under : over)
@@ -432,8 +462,12 @@ function draw(p: DrawPayload): void {
     cards.append(host)
     cursor += m.delay ?? 0
     const from = cursor
+    if (i === quiet) resumeAt = from
+    // A mark with words starts a line, and so does the first mark of all, so going back to the start is a line too.
+    const said = words(m).join(' ')
+    if (said || !lines.length) startLine(pi, i, said, from, loud)
     // The pointer goes to each mark as it starts, but stays on a step's target while its own button pops in.
-    const aim = m.id === 'walk' ? null : pointer.aim(m, P, R)
+    const aim = m.id === 'walk' || !loud ? null : pointer.aim(m, P, R)
     if (aim) playing.push({ at: from, dur: 0, frame: () => {}, start: () => void pointer.glide(aim) })
     if (m.id) {
       // A mark with an id an earlier one had takes its place as it starts.
@@ -442,24 +476,25 @@ function draw(p: DrawPayload): void {
       if (old) playing.push({ at: from, dur: 0, frame: () => {}, start: () => drop(old) })
     }
     let prevAt = cursor
-    let said = !m.say
+    let spoken = !m.say || !loud
     for (const b of beatsFor(m, g, host, color, P, R)) {
       const at = b.together ? prevAt : cursor
-      if (b.say) {
+      if (b.say && loud) {
         // A beat with words of its own (a figure's step) starts once the mark's words are out, and says its own.
-        if (!said) narrate(m.say!, from, at)
-        said = true
+        if (!spoken) narrate(m.say!, from, at)
+        spoken = true
         narrate(b.say, at, at + b.dur)
       }
       playing.push({ ...b, at })
       prevAt = at
       cursor = Math.max(cursor, at + b.dur)
     }
-    if (!said) narrate(m.say!, from, cursor)
+    if (!spoken) narrate(m.say!, from, cursor)
     cursor += GAP
   }
+  if (quiet >= p.marks.length) resumeAt = cursor
   // Nothing narrated: read the caption out over the whole drawing instead.
-  if (speaksCaption(p)) narrate(p.caption!, start, cursor)
+  if (reads && !quiet) narrate(p.caption!, start, cursor)
   endsAt = cursor
   // In time order, so when a slow frame finds several beats due, a beat starts before a later wait for words can
   // hold it back (the sort keeps the order of beats due together).
@@ -472,7 +507,87 @@ function draw(p: DrawPayload): void {
   const after = p.fadeAfter
   if (after) playing.push({ at: cursor, dur: 0, fades: true, frame: () => {}, start: () => fadeLater((fadeAfter = after)) })
   if (!raf) raf = requestAnimationFrame(tick)
+  scrub.setLines(lines.map(l => l.text))
+  scrub.setState('playing')
+  return resumeAt
 }
+
+// ---- going back over an explanation
+
+/** Where a spoken line starts: mark `m` of the `p`th drawing on screen. */
+interface Line {
+  p: number
+  m: number
+  text: string
+}
+let lines: Line[] = []
+let line = -1 // the line being said
+let paused = false
+// What was on screen before it faded or was replaced, to play again.
+let lastShown: DrawPayload[] = []
+let lastLines: Line[] = []
+let lastFade = 0 // the fade-out the latest drawing asked for
+
+/** Notes a line starting at mark `m` of drawing `p`; when `loud`, it becomes the current line as it starts. */
+function startLine(p: number, m: number, text: string, at: number, loud: boolean): void {
+  const last = lines[lines.length - 1]
+  // Marks drawn before anything is said belong to the first line.
+  if (last && !last.text && text) {
+    last.text = text
+    return
+  }
+  const n = lines.push({ p, m, text }) - 1
+  if (loud) playing.push({ at, dur: 0, frame: () => {}, start: () => setLine(n) })
+}
+
+function setLine(n: number): void {
+  line = n
+  scrub.setLine(n)
+  window.inkBridge?.lines(
+    lines.map(l => l.text),
+    n,
+  )
+}
+
+/** Builds the drawing again as it stood when line `n` started, then plays on from there unless `play` is false. */
+function seek(n: number, play: boolean): void {
+  const payloads = shown.length ? shown : lastShown
+  const to = (shown.length ? lines : lastLines)[n]
+  if (!to) return
+  const fadeSeconds = lastFade
+  window.inkBridge?.hush()
+  wipe()
+  let at = 0
+  payloads.forEach((p, i) => {
+    const quiet = i < to.p ? Infinity : i === to.p ? to.m : 0
+    const t = draw({ ...p, append: i > 0, cursor: i < to.p ? false : p.cursor, sounds: false, fadeAfter: i === payloads.length - 1 ? fadeSeconds || undefined : undefined }, quiet)
+    if (i === to.p) at = t
+  })
+  // The pen's sounds come back as the line starts, not for the marks drawn all at once before it.
+  const sounds = payloads[to.p].sounds ?? false
+  playing.push({ at, dur: 0, frame: () => {}, start: () => setSounds(sounds) })
+  playing.sort((a, b) => a.at - b.at)
+  // Everything before the line is due on the next frame; the line itself starts just after.
+  clock()
+  clockAt = at - 0.01
+  setLine(n)
+  paused = !play
+  scrub.setState(play ? 'playing' : 'paused')
+  if (play) window.inkBridge?.prepare(lines.slice(n).map(l => l.text).filter(Boolean))
+}
+
+/** Pauses, or plays on from the start of the line it paused in. */
+function toggle(): void {
+  if (paused) return seek(Math.max(0, line), true)
+  clock()
+  paused = true
+  clearTimeout(fadeTimer)
+  window.inkBridge?.hush()
+  stopSaying()
+  scrub.setState('paused')
+}
+
+scrub.init({ seek, toggle })
 
 // ---- staying through a reload
 
@@ -511,13 +626,17 @@ function restore(): void {
 }
 
 /** Whether a drawing is still going, for a reload in development to wait for. */
-Object.assign(window, { inkBusy: () => playing.length > 0 || waiting !== null })
+Object.assign(window, { inkBusy: () => !paused && (playing.length > 0 || waiting !== null) })
 
 if (window.inkBridge) {
   restore()
-  window.inkBridge.onDraw(draw)
+  window.inkBridge.onDraw(p => {
+    paused = false // something new to show plays, even over a paused explanation
+    draw(p)
+  })
   window.inkBridge.onClear(o => clearInk(o.instant))
   window.inkBridge.onSaying(s => showSaying(s.text, s.seconds))
+  window.inkBridge.onReplay(n => seek(n, true))
   window.inkBridge.onPoint(async p => {
     await (p.press ? pointer.press(p.at, p.label) : p.scroll ? pointer.scroll(p.at, p.scroll) : pointer.glide(p.at))
     window.inkBridge!.pointed(p.id)

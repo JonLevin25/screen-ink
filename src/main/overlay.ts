@@ -70,6 +70,30 @@ ipcMain.handle('ink:speak', (e, text: unknown) => {
   return voice.speak(text, seconds => captionsOn() && !page.isDestroyed() && page.send('ink:saying', { text, seconds }))
 })
 
+// Going back over a drawing: the page stops the words being said, has the lines from there rendered ahead, and says
+// which line it is on, for whoever lists the lines (onLines).
+ipcMain.on('ink:hush', e => e.sender === page() && voice.stop())
+ipcMain.on('ink:prepare', (e, lines: unknown) => {
+  if (e.sender !== page() || !Array.isArray(lines)) return
+  const texts = lines.filter((l): l is string => typeof l === 'string' && l.length <= 2000).slice(0, 100)
+  if (texts.length) void voice.prepare(texts)
+})
+let lineListeners: ((lines: string[], current: number) => void)[] = []
+/** Calls `fn` with the spoken lines of the drawing on screen as each starts, and which one it is. */
+export const onLines = (fn: (lines: string[], current: number) => void) => void lineListeners.push(fn)
+ipcMain.on('ink:lines', (e, lines: unknown, current: unknown) => {
+  if (e.sender !== page() || !Array.isArray(lines) || typeof current !== 'number') return
+  const texts = lines.map(l => (typeof l === 'string' ? l : ''))
+  for (const fn of lineListeners) fn(texts, current)
+})
+
+/** Plays the drawing on screen, or the last one if it has gone, again from spoken line `line`. */
+export function replay(line = 0): void {
+  if (!win || win.isDestroyed()) return
+  win.showInactive()
+  win.webContents.send('ink:replay', line)
+}
+
 // A figure saved as a 3D model goes in Downloads, shown in Finder.
 ipcMain.handle('ink:save', async (e, name: unknown, usdz: unknown) => {
   if (e.sender !== page() || typeof name !== 'string' || !(usdz instanceof Uint8Array) || usdz.length > 64e6) return null
